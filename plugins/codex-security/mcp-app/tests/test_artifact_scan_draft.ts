@@ -509,6 +509,41 @@ try {
   assert.deepEqual(anchorResult.findings[0].identity, { anchor });
   assert.equal("finding" in anchorResult.coverage.deferred[0], false);
 
+  const generatedAnchorRoot = path.join(
+    root,
+    "generated-anchor-is-schema-safe",
+  );
+  await mkdir(generatedAnchorRoot);
+  const generatedAnchorContext = { ...context, root: generatedAnchorRoot };
+  const generatedFinding = {
+    ...finding,
+    title: "_Unsafe archive_",
+    provenance: anchorProvenance,
+    extensions: anchorExtensions,
+  };
+  await recordCodexSecurityScanDraft(generatedAnchorContext, {
+    ...input,
+    complete: false,
+    findings: [generatedFinding],
+  });
+  await recordCodexSecurityScanDraft(generatedAnchorContext, {
+    ...input,
+    complete: false,
+    findings: [{ ...generatedFinding, summary: "Updated draft summary." }],
+  });
+  const generatedAnchorResult = await readJson(
+    generatedAnchorRoot,
+    "findings.json",
+  );
+  assert.equal(
+    generatedAnchorResult.findings[0].identity.anchor,
+    "unsafe-archive_",
+  );
+  assert.match(
+    generatedAnchorResult.findings[0].identity.anchor,
+    /^[a-z0-9][a-z0-9._/-]*$/u,
+  );
+
   const parentCheckpointRoot = path.join(root, "checkpoint-parent");
   await mkdir(parentCheckpointRoot);
   await recordCodexSecurityScanDraft(
