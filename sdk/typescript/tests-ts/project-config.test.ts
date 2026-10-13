@@ -261,10 +261,26 @@ describe("project configuration input contract", () => {
     await expect(readProjectConfig(path)).rejects.toThrow();
   });
 
+  test.each([
+    ["invalid.yaml", "scan: [\n", "Flow sequence"],
+    ["invalid.json", '{"scan":', "JSON Parse error"],
+  ])("includes the parser cause for %s", async (name, contents, cause) => {
+    const root = await temporaryDirectory();
+    const path = join(root, name);
+    await writeFile(path, contents);
+    let message = "";
+    try {
+      await readProjectConfig(path);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain(cause);
+  });
+
   test("reports a missing selected file", async () => {
     await expect(
       readProjectConfig("missing.yaml", await temporaryDirectory()),
-    ).rejects.toThrow("Cannot read project configuration");
+    ).rejects.toThrow(/Cannot read project configuration.*ENOENT/u);
   });
 });
 
