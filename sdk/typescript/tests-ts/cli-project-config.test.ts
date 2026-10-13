@@ -125,6 +125,24 @@ test("info resolves a config and its sources without a target, prompt reads, or 
   });
 });
 
+test("YAML diagnostics preserve the complete long project-config path", async () => {
+  const input = await fixture({});
+  const missingConfig = join(
+    input.configDirectory,
+    "a".repeat(96),
+    "scan.yaml",
+  );
+  const { stderr, runCli } = createCliTest(main);
+
+  expect(
+    await runCli(
+      ["info", "--config", missingConfig, "--format", "yaml"],
+      dependencies({ currentDirectory: input.configDirectory }),
+    ),
+  ).toBe(2);
+  expect(stderr.text()).toContain(missingConfig);
+});
+
 test("info without a file reports default sources, including unset settings", async () => {
   const input = await fixture({});
   const stdout = captureCli(main, "stdout");

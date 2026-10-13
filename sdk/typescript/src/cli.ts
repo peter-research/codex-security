@@ -46,6 +46,7 @@ import { Readable, Writable as NodeWritable } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify, stripVTControlCharacters } from "node:util";
 import { Cli, z } from "incur";
+import { parse as parseYaml } from "yaml";
 import { formatCliHelp } from "./cli-help.js";
 import { scanLogsJson } from "./cli-scan-logs-json.js";
 import {
@@ -8072,6 +8073,14 @@ export function skillCommandFailure(
 }
 
 function incurErrorMessage(output: string): string {
+  try {
+    const document: unknown = parseYaml(output);
+    if (isJsonObject(document) && typeof document["message"] === "string") {
+      return document["message"];
+    }
+  } catch {
+    // Non-YAML framework formats retain the line-based compatibility path.
+  }
   const message = output
     .split("\n")
     .find((line) => line.startsWith("message: "))
