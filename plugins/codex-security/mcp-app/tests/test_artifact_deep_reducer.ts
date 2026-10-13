@@ -403,6 +403,61 @@ try {
     "previous synthesized evidence must survive even when source references are unchanged",
   );
 
+  const writeupFinding = {
+    ...finding("writeup", "src/writeup.ts"),
+    writeup: { reportPath: "findings/writeup/writeup.md" },
+  };
+  const missingWriteupFinding = {
+    ...finding("missing-writeup", "src/missing-writeup.ts"),
+    writeup: { reportPath: "findings/missing-writeup/missing-writeup.md" },
+  };
+  const writeupWorker = await createWorker({
+    workersRoot,
+    label: "discovery-writeup",
+    id: "worker-writeup",
+    result: workerDraft([writeupFinding, missingWriteupFinding]),
+  });
+  const writeupSource = path.join(
+    path.dirname(writeupWorker.resultPath),
+    "findings",
+    "writeup",
+  );
+  await mkdir(writeupSource, { recursive: true });
+  await writeFile(
+    path.join(writeupSource, "writeup.md"),
+    "Detailed evidence.\n",
+  );
+  const writeupOutput = path.join(dedupRoot, "dedup-writeup", "output");
+  await mkdir(writeupOutput, { recursive: true });
+  const writeupContext = {
+    root: writeupOutput,
+    repoRoot: root,
+    scanId,
+    layout: "reducer",
+    deepReducer: {
+      scanRoot,
+      claimedWorkers: [writeupWorker],
+    },
+  };
+  const writeupOutcome = await recordCodexSecurityDeepReduction(
+    writeupContext,
+    reduction([writeupFinding, missingWriteupFinding]),
+  );
+  assert.equal(writeupOutcome.findingCount, 2);
+  assert.deepEqual(writeupOutcome.warnings, [
+    "Removed unavailable write-up reference from Deep finding 2.",
+  ]);
+  assert.equal(
+    await readFile(
+      path.join(scanRoot, "findings", "writeup", "writeup.md"),
+      "utf8",
+    ),
+    "Detailed evidence.\n",
+  );
+  const writeupResult = await readJson(writeupOutput, "result.json");
+  assert.equal("writeup" in writeupResult.findings[0], true);
+  assert.equal("writeup" in writeupResult.findings[1], false);
+
   await assert.rejects(
     getCodexSecurityDeepReducerInputs({ root, repoRoot: root, layout: "scan" }),
     /No active Deep reducer is bound/,

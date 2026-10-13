@@ -1,9 +1,14 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ZodType } from "zod/v4";
 import commonSchema from "../../schemas/definitions/artifact-common.schema.json";
 import reducerSchema from "../../schemas/tools/deep-reducer.schema.json";
 import scanDraftSchema from "../../schemas/tools/scan-draft.schema.json";
 import type { ArtifactContext } from "./artifact-context.js";
+import {
+  artifactDestination,
+  readArtifactText,
+  replaceArtifactText,
+} from "./artifact-io.js";
 import type { DeepReducerPageInput } from "./artifact-deep-reducer-pages.js";
 import {
   parsePersistedScanDraft,
@@ -127,6 +132,12 @@ export async function recordCodexSecurityDeepReduction(
       inputs.previous,
     );
 
+    const writeupWarnings = await materializeDeepWriteups(
+      context,
+      reduction,
+      inputs,
+    );
+
     await saveScanDraftCheckpoint(context, reduction);
     await writeJsonAtomic(bound.resultPath, reduction);
     const documentWarning = await saveThreatModelDocument(
@@ -136,9 +147,118 @@ export async function recordCodexSecurityDeepReduction(
     return {
       findingCount: reduction.findings.length,
       consumedWorkerIds: bound.state.claimedWorkers.map((worker) => worker.id),
-      ...(documentWarning === undefined ? {} : { warnings: [documentWarning] }),
+      ...(documentWarning === undefined && writeupWarnings.length === 0
+        ? {}
+        : {
+            warnings: [
+              ...writeupWarnings,
+              ...(documentWarning === undefined ? [] : [documentWarning]),
+            ],
+          }),
     };
   });
+}
+
+async function materializeDeepWriteups(
+  context: ArtifactContext,
+  reduction: DeepReductionInput,
+  inputs: DeepReductionSources,
+): Promise<string[]> {
+  const deepReducer = context.deepReducer!;
+  const scanContext: ArtifactContext = {
+    root: deepReducer.scanRoot,
+    repoRoot: context.repoRoot,
+    layout: "scan",
+  };
+  const workerRoots = new Map(
+    inputs.discoveries.map(({ workerId }) => [
+      workerId,
+      dirname(
+        deepReducer.claimedWorkers.find((worker) => worker.id === workerId)!
+          .resultPath,
+      ),
+    ]),
+  );
+  const warnings: string[] = [];
+
+  for (const [index, finding] of reduction.findings.entries()) {
+    const writeup = finding.writeup;
+    if (
+      writeup === undefined ||
+      writeup === null ||
+      typeof writeup !== "object"
+    )
+      continue;
+    const reportPath = (writeup as Record<string, unknown>).reportPath;
+    if (typeof reportPath !== "string") continue;
+    const components = reportPath.split("/");
+    const provenance = finding.provenance as Record<string, unknown>;
+    const sourceIds = Array.isArray(provenance.sourceFindingIds)
+      ? provenance.sourceFindingIds.filter(
+          (id): id is string => typeof id === "string",
+        )
+      : [];
+    const sourceWorkerRoots = sourceIds.flatMap((id) => {
+      const workerId = [...workerRoots.keys()].find((candidate) =>
+        id.startsWith(`${candidate}:`),
+      );
+      return workerId === undefined ? [] : [workerRoots.get(workerId)!];
+    });
+    const roots = [
+      context.root,
+      ...(deepReducer.previousReducerResultPath
+        ? [dirname(deepReducer.previousReducerResultPath)]
+        : []),
+      ...sourceWorkerRoots,
+    ];
+    let contents: string | undefined;
+    for (const root of new Set(roots)) {
+      try {
+        contents = await readArtifactText(
+          { root, repoRoot: context.repoRoot, layout: "reducer" },
+          components,
+          `Deep finding write-up ${index + 1}`,
+        );
+        break;
+      } catch {
+        // A write-up can live in a source worker rather than the reducer output.
+      }
+    }
+    if (contents === undefined) {
+      delete finding.writeup;
+      warnings.push(
+        `Removed unavailable write-up reference from Deep finding ${index + 1}.`,
+      );
+      continue;
+    }
+    try {
+      const existing = await readArtifactText(
+        scanContext,
+        components,
+        `Deep finding write-up ${index + 1}`,
+      );
+      if (existing !== contents) {
+        throw new Error(
+          `Deep finding write-up path conflicts with existing scan content: ${reportPath}`,
+        );
+      }
+      continue;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        !error.message.endsWith("the requested artifact is unavailable.")
+      ) {
+        throw error;
+      }
+    }
+    const destination = await artifactDestination(
+      scanContext,
+      components,
+      `Deep finding write-up ${index + 1}`,
+    );
+    await replaceArtifactText(destination, contents);
+  }
+  return warnings;
 }
 
 function bindDeepReducer(context: ArtifactContext) {
