@@ -1362,6 +1362,7 @@ export class CodexSecurity {
       const policyFilesystem = policyFilesystemPermissions(
         inputs.gitMetadataPaths,
         await codexExecutableReadPaths(this.#codexCommand().command),
+        runtime.codexHome,
       );
       const { codex } = await this.#createSessionCodex(
         session,
@@ -5273,7 +5274,11 @@ export function scanRuntimeCodexConfig(
         },
       },
       [POLICY_PERMISSION_PROFILE]: {
-        filesystem: policyFilesystemPermissions(),
+        filesystem: policyFilesystemPermissions(
+          [],
+          [],
+          protectedCredentialHome,
+        ),
         network: { enabled: false },
       },
     },
@@ -5283,10 +5288,14 @@ export function scanRuntimeCodexConfig(
 function policyFilesystemPermissions(
   gitMetadataPaths: readonly string[] = [],
   codexPaths: readonly string[] = [],
+  protectedCredentialHome?: string,
 ): JsonObject {
   return {
-    ":minimal": "read",
+    [process.platform === "win32" ? ":root" : ":minimal"]: "read",
     ":workspace_roots": "read",
+    ...(protectedCredentialHome === undefined
+      ? {}
+      : { [protectedCredentialHome]: { ".": "deny" } }),
     // Linux's sandbox re-executes Codex, including installations outside /usr.
     ...Object.fromEntries(codexPaths.map((path) => [path, { ".": "read" }])),
     // A scoped "." keeps native permission paths literal, including glob characters.

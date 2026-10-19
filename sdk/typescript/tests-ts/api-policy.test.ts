@@ -284,8 +284,9 @@ describe("CodexSecurity policy API", () => {
           },
           codex_security_policy: {
             filesystem: {
-              ":minimal": "read",
+              [process.platform === "win32" ? ":root" : ":minimal"]: "read",
               ":workspace_roots": "read",
+              [await realpath(f.runtime.codexHome)]: { ".": "deny" },
               ...Object.fromEntries(
                 readPaths.map((path) => [path, { ".": "read" }]),
               ),
@@ -933,7 +934,10 @@ describe("CodexSecurity policy API", () => {
       expect(overrides).toMatchObject({
         permissions: {
           codex_security_policy: {
-            filesystem: { ":minimal": "read", ":workspace_roots": "read" },
+            filesystem: {
+              [process.platform === "win32" ? ":root" : ":minimal"]: "read",
+              ":workspace_roots": "read",
+            },
           },
         },
       });

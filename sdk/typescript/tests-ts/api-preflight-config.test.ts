@@ -202,7 +202,7 @@ describe("CodexSecurity preflight configuration", () => {
         },
         codex_security_policy: {
           filesystem: {
-            ":minimal": "read",
+            [process.platform === "win32" ? ":root" : ":minimal"]: "read",
             ":workspace_roots": "read",
           },
           network: { enabled: false },
@@ -221,6 +221,8 @@ describe("CodexSecurity preflight configuration", () => {
   test("denies model commands access to the persistent credential home", () => {
     const stateDirectory = join(tmpdir(), "codex-security-persistent-state");
     const credentialHome = join(stateDirectory, "codex-home");
+    const policyReadMarker =
+      process.platform === "win32" ? ":root" : ":minimal";
     const config = scanRuntimeCodexConfig({}, credentialHome);
 
     expect(config["permissions"]).toEqual({
@@ -233,8 +235,9 @@ describe("CodexSecurity preflight configuration", () => {
       },
       codex_security_policy: {
         filesystem: {
-          ":minimal": "read",
+          [policyReadMarker]: "read",
           ":workspace_roots": "read",
+          [credentialHome]: { ".": "deny" },
         },
         network: { enabled: false },
       },
@@ -244,8 +247,37 @@ describe("CodexSecurity preflight configuration", () => {
         "codex_security_policy"
       ] as JsonObject
     )["filesystem"] as JsonObject;
-    expect(policyFilesystem).not.toHaveProperty(":root");
-    expect(policyFilesystem).not.toHaveProperty(credentialHome);
+    expect(policyFilesystem[policyReadMarker]).toBe("read");
+    expect(policyFilesystem[credentialHome]).toEqual({ ".": "deny" });
+  });
+
+  test("uses root reads for policy under the Windows elevated sandbox", () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(
+      process,
+      "platform",
+    );
+    const credentialHome = join(tmpdir(), "codex-security-codex-home");
+    try {
+      Object.defineProperty(process, "platform", {
+        ...originalPlatform,
+        value: "win32",
+      });
+      const permissions = scanRuntimeCodexConfig({}, credentialHome)[
+        "permissions"
+      ] as JsonObject;
+      expect(permissions["codex_security_policy"]).toEqual({
+        filesystem: {
+          ":root": "read",
+          ":workspace_roots": "read",
+          [credentialHome]: { ".": "deny" },
+        },
+        network: { enabled: false },
+      });
+    } finally {
+      if (originalPlatform !== undefined) {
+        Object.defineProperty(process, "platform", originalPlatform);
+      }
+    }
   });
 
   test("preserves an explicitly requested strict approval policy", () => {
