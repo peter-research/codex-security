@@ -212,6 +212,7 @@ import {
   codexSecurityCredentialHome,
   codexSecurityHasStoredFileCredentials,
   codexSecurityStateDirectory,
+  bootstrapWorkspaceRoot,
   codexExecutableReadPaths,
   createIsolatedHome,
   executablePathForSpawn,
@@ -4315,7 +4316,7 @@ export class CodexSecurity {
     try {
       throwIfAborted(signal);
       bootstrapWorkspace = await createIsolatedHome(
-        temporaryRoot,
+        bootstrapWorkspaceRoot(codexHome, temporaryRoot),
         validateLocation,
       );
       await requirePrivateCredentialHome(

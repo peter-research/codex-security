@@ -2275,6 +2275,14 @@ export async function createIsolatedHome(
   }
 }
 
+export function bootstrapWorkspaceRoot(
+  codexHome: string,
+  temporaryRoot: string | undefined,
+  platform = process.platform,
+): string | undefined {
+  return platform === "win32" ? win32.dirname(codexHome) : temporaryRoot;
+}
+
 export async function importAmbientAuth(
   ambientHome: string,
   isolatedHome: string,

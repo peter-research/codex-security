@@ -69,6 +69,7 @@ import {
 import {
   acquireCodexSecurityCredentialHomeLock,
   bundledPluginCandidates,
+  bootstrapWorkspaceRoot,
   canonicalizeModelSafePath,
   codexSecurityCredentialAllowsAmbientImport,
   codexSecurityCredentialHome,
@@ -273,6 +274,30 @@ async function inspectMcpServer(): Promise<McpServerResponse[]> {
 }
 
 describe("plugin runtime preparation", () => {
+  test("uses the private state directory for Windows bootstrap workspaces", () => {
+    const codexHome = win32.join(
+      "C:\\Users\\fixture",
+      ".codex",
+      "state",
+      "plugins",
+      "codex-security",
+      "codex-home",
+    );
+    const temporaryRoot = win32.join(
+      "C:\\Users\\fixture",
+      "AppData",
+      "Local",
+      "Temp",
+    );
+
+    expect(bootstrapWorkspaceRoot(codexHome, temporaryRoot, "win32")).toBe(
+      win32.dirname(codexHome),
+    );
+    expect(bootstrapWorkspaceRoot(codexHome, temporaryRoot, "linux")).toBe(
+      temporaryRoot,
+    );
+  });
+
   test("keeps installed-package plugin lookup inside the package", async () => {
     const root = await temporaryDirectory();
     const packageRoot = join(root, "node_modules", "@openai", "codex-security");
