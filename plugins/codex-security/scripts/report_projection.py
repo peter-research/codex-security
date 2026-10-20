@@ -47,7 +47,7 @@ def _strings(value: Any) -> list[str]:
 
 def _path_label(value: str) -> str:
     if "," in value or value != " ".join(value.split()) or any(ord(c) < 32 for c in value):
-        return json.dumps(value)
+        return json.dumps(value, ensure_ascii=False)
     return value
 
 

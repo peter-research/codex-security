@@ -712,6 +712,7 @@ def test_projection_normalizes_target_and_quotes_scope_control_characters() -> N
         ("  ", "`"),
         (" service ", "`"),
         ("a,b.ts", "`"),
+        ("docs/Résumé, final.md", "`"),
         ("a  b", "`"),
         (" a`b ", "``"),
         ("a``b,c", "```"),
