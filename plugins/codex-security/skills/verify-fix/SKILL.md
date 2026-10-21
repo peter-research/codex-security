@@ -27,7 +27,9 @@ Use `../../references/static-finding-assessment.md` to identify the original att
 
 ## Result Contract
 
-Return exactly one JSON object:
+Choose the response format based on the caller. In a normal interactive conversation, when JSON or another machine-readable format was not requested, return a readable Markdown assessment. Give each finding its own heading or bullet with its identifier and verdict, explain the evidence and checks in separate prose, and state any validation gaps plainly. Do not wrap the answer in a JSON object or compress the evidence into one long string.
+
+Return one result per supplied finding in the requested order. Use JSON when the caller explicitly requests a machine-readable response or when an automated CLI or hosted workflow requires it. In those cases, return exactly one JSON object:
 
 ```json
 {

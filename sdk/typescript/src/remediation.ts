@@ -62,7 +62,7 @@ export async function remediationPrompt(input: RemediationPromptInput) {
         "utf8",
       ),
       `Expected result identifiers (JSON array): ${JSON.stringify(input.verificationIds)}`,
-      "Return exactly one evidence-backed result per expected identifier in the same order, following the skill's JSON result contract.",
+      "This CLI or hosted workflow requires machine-readable output. Return exactly one JSON object with one evidence-backed result per expected identifier in the same order, following the skill's JSON result contract.",
     );
     if (input.structuredVerification) {
       prompt.push(

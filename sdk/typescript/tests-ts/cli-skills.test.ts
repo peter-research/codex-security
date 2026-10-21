@@ -12,6 +12,7 @@ import {
   runCodexSkillCommand,
   skillCommandFailure,
 } from "../src/cli.js";
+import { remediationPrompt } from "../src/remediation.js";
 import type { LinearClientFactory } from "../src/linear.js";
 import { pluginMetadata } from "../src/runtime.js";
 import { VERSION } from "../src/version.js";
@@ -49,6 +50,24 @@ function linearIssue(identifier: string, comments: string[] = []) {
 }
 
 describe("CLI skill commands", () => {
+  test("keeps interactive verification readable and automated output structured", async () => {
+    const skill = await filesystem.readFile(
+      join(PLUGIN_ROOT, "skills", "verify-fix", "SKILL.md"),
+      "utf8",
+    );
+    const prompt = await remediationPrompt({
+      operation: "verify",
+      pluginRoot: PLUGIN_ROOT,
+      contents: ["Synthetic finding"],
+      verificationIds: ["finding-1"],
+    });
+    expect(skill).toContain("normal interactive conversation");
+    expect(skill).toContain("return a readable Markdown assessment");
+    expect(prompt).toContain(
+      "This CLI or hosted workflow requires machine-readable output.",
+    );
+  });
+
   test.each([
     [
       "valid",
