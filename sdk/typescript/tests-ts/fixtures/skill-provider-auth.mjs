@@ -46,6 +46,16 @@ if (process.env.SYNTHETIC_SKILL_COMMAND === "validate") {
         },
       });
     } else if (request.method === "thread/start") {
+      if (process.env.SYNTHETIC_AUTH_FAILURE === "1") {
+        send({
+          id: request.id,
+          error: {
+            code: 401,
+            message: "Unauthorized: ChatGPT authentication expired.",
+          },
+        });
+        continue;
+      }
       send({
         id: request.id,
         result: {

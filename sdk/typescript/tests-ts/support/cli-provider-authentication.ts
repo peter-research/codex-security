@@ -18,6 +18,9 @@ export async function runProviderSkill(
     environment,
     ambientConfig,
     storedCredentials = false,
+    storedChatGPT = false,
+    authFailure = false,
+    format,
   }: {
     command?: "validate" | "patch" | "verify-fix";
     auth?: "auto" | "chatgpt" | "api-key";
@@ -25,6 +28,9 @@ export async function runProviderSkill(
     environment?: NodeJS.ProcessEnv;
     ambientConfig?: string;
     storedCredentials?: boolean;
+    storedChatGPT?: boolean;
+    authFailure?: boolean;
+    format?: "json" | "jsonl";
   },
 ) {
   const repository = join(stateDirectory, "repository");
@@ -35,17 +41,21 @@ export async function runProviderSkill(
   if (ambientConfig !== undefined) {
     await writeFile(join(ambientHome, "config.toml"), ambientConfig);
   }
-  if (storedCredentials) {
+  if (storedCredentials || storedChatGPT) {
     await writeFile(
       join(ambientHome, "auth.json"),
-      JSON.stringify({
-        auth_mode: "apikey",
-        OPENAI_API_KEY: "SYNTHETIC_STORED_KEY",
-      }),
+      JSON.stringify(
+        storedChatGPT
+          ? { auth_mode: "chatgpt" }
+          : {
+              auth_mode: "apikey",
+              OPENAI_API_KEY: "SYNTHETIC_STORED_KEY",
+            },
+      ),
       { mode: 0o600 },
     );
   }
-  const { stderr, runCli } = createCliTest(main);
+  const { stdout, stderr, runCli } = createCliTest(main);
 
   const status = await runCli(
     [
@@ -53,6 +63,7 @@ export async function runProviderSkill(
       "Synthetic issue",
       "--auth",
       auth,
+      ...(format === undefined ? [] : ["--format", format]),
       ...(Array.isArray(overrides)
         ? overrides.flatMap((value) => ["--codex", value])
         : []),
@@ -65,6 +76,7 @@ export async function runProviderSkill(
         CODEX_HOME: ambientHome,
         SYNTHETIC_PROVIDER_LOG: log,
         SYNTHETIC_SKILL_COMMAND: command,
+        ...(authFailure ? { SYNTHETIC_AUTH_FAILURE: "1" } : {}),
       },
       onCodex: async (args, output, environment, input) => {
         if (!Array.isArray(overrides) && output !== undefined)
@@ -95,6 +107,7 @@ export async function runProviderSkill(
   }
   return {
     status,
+    stdout: stdout.text(),
     stderr: stderr.text(),
     launch: records[0],
     requests: records.slice(1),

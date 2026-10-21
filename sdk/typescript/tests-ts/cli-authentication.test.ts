@@ -1296,6 +1296,29 @@ describe("CLI authentication", () => {
 });
 
 describe("skill authentication", () => {
+  test("verify-fix reports ChatGPT authentication failures in JSON mode", async () => {
+    const result = await runProviderSkill(stateDirectory, {
+      command: "verify-fix",
+      auth: "chatgpt",
+      overrides: [],
+      storedChatGPT: true,
+      authFailure: true,
+      format: "json",
+    });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain(
+      "Unauthorized: ChatGPT authentication expired.",
+    );
+    const output = JSON.parse(result.stdout);
+    expect(output).toMatchObject({
+      ok: false,
+      error: {
+        code: "AUTHENTICATION_FAILED",
+        message: expect.stringContaining("ChatGPT authentication expired"),
+      },
+    });
+  });
+
   test.each(["patch", "verify-fix"] as const)(
     "%s inherits ambient command authentication through a null optional override",
     async (command) => {

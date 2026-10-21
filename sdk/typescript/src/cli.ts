@@ -5262,7 +5262,7 @@ export async function main(
         },
       ],
       output: z.record(z.string(), z.unknown()).optional(),
-      async run({ format, options }) {
+      async run({ format, options, error: commandError }) {
         try {
           const linear =
             options.linearIssue.length > 0 || !!options.linearProject;
@@ -5348,13 +5348,14 @@ export async function main(
               identifiers.length,
             );
             progress.startVerification();
+            const skillErrors = captureOutput();
             try {
               exitCode = await runSkill(
                 "verify-fix",
                 selected === undefined ? [...positionals, ...imports] : [],
                 options,
                 response.stream,
-                errorOutput,
+                skillErrors.stream,
                 dependencies,
                 {
                   directory: repository,
@@ -5367,8 +5368,36 @@ export async function main(
                   onEvent: progress.observe.bind(progress),
                 },
               );
+              const skillErrorText = skillErrors.text();
+              if (skillErrorText.length > 0) {
+                await writeCliOutput(errorOutput, skillErrorText);
+              }
               if (exitCode !== 0) {
                 if (exitCode !== 130 && exitCode !== 143) exitCode = 2;
+                if (format === "json" || format === "jsonl") {
+                  const message =
+                    skillErrorText.trim().replace(/^codex-security: /u, "") ||
+                    "verify-fix could not complete verification.";
+                  const failure = {
+                    code: /401|invalid.api.key|token.expired|unauthori[sz]ed|authenticationrequired|not logged in/iu.test(
+                      message,
+                    )
+                      ? "AUTHENTICATION_FAILED"
+                      : "VERIFICATION_FAILED",
+                    message,
+                  };
+                  structuredError = true;
+                  renderedOutput =
+                    JSON.stringify({
+                      ok: false,
+                      repository,
+                      ...(selected === undefined
+                        ? {}
+                        : { scanId: selected.scanId }),
+                      error: failure,
+                    }) + "\n";
+                  return commandError({ ...failure, exitCode });
+                }
                 frameworkExit = exitCode;
                 return undefined;
               }
