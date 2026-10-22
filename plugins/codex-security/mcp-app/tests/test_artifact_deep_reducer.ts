@@ -150,6 +150,32 @@ try {
     /no assigned source finding/,
     "a reducer cannot introduce an unvalidated finding outside its assigned sources",
   );
+  const placeholderFindings = [
+    ["title", { ...shared, title: "X" }],
+    ["summary", { ...shared, summary: "..." }],
+    ["remediation", { ...shared, remediation: "TBD" }],
+    ["rootCause", { ...shared, rootCause: "TODO" }],
+    ["rootCause.summary", { ...shared, rootCause: { summary: "placeholder" } }],
+  ] as const;
+  for (const [field, degraded] of placeholderFindings) {
+    const findingWithSources = {
+      ...degraded,
+      provenance: {
+        ...degraded.provenance,
+        sourceFindingIds: ["worker-001:0", "worker-002:0"],
+      },
+    };
+    await assert.rejects(
+      recordCodexSecurityDeepReduction(
+        context,
+        reduction([findingWithSources, independent]),
+      ),
+      (error: Error) =>
+        error.message.includes(`placeholder text in finding ${field}`) &&
+        error.message.includes("worker-001:0"),
+      `a reducer cannot persist placeholder content in ${field}`,
+    );
+  }
   await assert.rejects(
     recordCodexSecurityDeepReduction(
       context,

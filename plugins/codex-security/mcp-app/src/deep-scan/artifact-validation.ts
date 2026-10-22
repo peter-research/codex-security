@@ -263,6 +263,7 @@ export function reconcileDeepReduction(
     previous ?? undefined,
   );
   retainSourceFindings(result, { discoveries, previous });
+  rejectPlaceholderFindingText(result);
   for (const [index, finding] of (previous?.findings ?? []).entries()) {
     const previousRefs = retainedFindingSources(finding, index).map(
       (source) => source.id,
@@ -299,6 +300,47 @@ export function reconcileDeepReduction(
     }
   }
   return result;
+}
+
+function rejectPlaceholderFindingText(result: DeepReductionInput): void {
+  const placeholder =
+    /^(?:x+|\.{3,}|…+|tbd|todo|to be determined|placeholder|lorem ipsum)[.!?]*$/iu;
+  for (const finding of result.findings) {
+    const record = finding as unknown as Record<string, unknown>;
+    const provenance = record.provenance as Record<string, unknown> | undefined;
+    const sourceIds = (
+      provenance?.sourceFindingIds as unknown[] | undefined
+    )?.filter((id): id is string => typeof id === "string");
+    const fields: Array<[string, unknown]> = [
+      ["title", record.title],
+      ["summary", record.summary],
+      ["writeup", record.writeup],
+      ["remediation", record.remediation],
+    ];
+    if (typeof record.rootCause === "string") {
+      fields.push(["rootCause", record.rootCause]);
+    } else if (
+      typeof record.rootCause === "object" &&
+      record.rootCause !== null &&
+      !Array.isArray(record.rootCause)
+    ) {
+      fields.push([
+        "rootCause.summary",
+        (record.rootCause as Record<string, unknown>).summary,
+      ]);
+    }
+    for (const [field, value] of fields) {
+      if (typeof value !== "string") continue;
+      const normalized = value
+        .trim()
+        .replace(/^[`*_~]+|[`*_~]+$/gu, "")
+        .trim();
+      if (!placeholder.test(normalized)) continue;
+      throw new Error(
+        `Deep reduction contains placeholder text in finding ${field} for source finding(s) ${sourceIds?.join(", ") ?? "unknown"}; restore evidence-backed content before submitting.`,
+      );
+    }
+  }
 }
 
 function findingSourceIds(finding: Record<string, unknown>): string[] {
