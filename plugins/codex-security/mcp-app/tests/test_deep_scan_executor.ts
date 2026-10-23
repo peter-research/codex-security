@@ -145,6 +145,7 @@ try {
     await testExternalProviderCredentialsReachWorker();
     await testArtifactServerUsesExtendedStartupTimeout();
     await testZeroSubagentsPreservesHostRestrictions();
+    await testDedupWorkersEnableCodeMode();
     await testSdkResumesExistingThread();
     await testRetryNotificationDoesNotInterruptTurn();
     await testSandboxNamespaceDiagnosticIsPreserved();
@@ -2302,6 +2303,7 @@ env_key = "SYNTHETIC_GATEWAY_KEY"`,
             ).features;
             assert.deepEqual(JSON.parse(JSON.stringify(workerFeatures)), {
               ...workerConfigurations[index].features,
+              ...(kind === "dedup" ? { code_mode: { enabled: true } } : {}),
               multi_agent_v2: {
                 enabled: false,
                 max_concurrent_threads_per_session: 1,
@@ -2314,7 +2316,7 @@ env_key = "SYNTHETIC_GATEWAY_KEY"`,
               "mcp_servers.parent": undefined,
             });
             assertReadOnlyWorkerPolicy(invocation.argv);
-            assertWorkerSubagentPolicy(invocation.argv, 0);
+            assertWorkerSubagentPolicy(invocation.argv, 0, kind === "dedup");
           }
           for (const launch of launches.filter(({ args }) =>
             args.includes("app-server"),
@@ -2704,6 +2706,23 @@ async function testZeroSubagentsPreservesHostRestrictions() {
       assertReadOnlyWorkerPolicy(invocation.argv);
     });
   }
+}
+
+async function testDedupWorkersEnableCodeMode() {
+  await withWorkerFixture(async (fixture, promptPath, workingDirectory) => {
+    await writeFile(promptPath, "fixture dedup worker prompt\n");
+    const result = await new CodexSdkWorkerExecutor({
+      parentSandbox: trustedParentSandbox,
+    }).run(
+      workerRequest(promptPath, workingDirectory, {
+        kind: "dedup",
+      }),
+    );
+    assert.equal(result.threadId, "fixture-thread-id");
+    const invocation = await readJson(fixture.markerPath);
+    assertWorkerSubagentPolicy(invocation.argv, 0, true);
+    assertReadOnlyWorkerPolicy(invocation.argv);
+  });
 }
 
 async function testLargeScopeTransport() {
@@ -3729,17 +3748,18 @@ function workerPermissionProfileOverride(args: readonly string[]) {
 function assertWorkerSubagentPolicy(
   args: readonly string[],
   subagents: number,
+  codeModeEnabled = false,
 ) {
   assertConfigOverrides(args, {
     "features.multi_agent_v2.enabled": false,
     "features.multi_agent_v2.max_concurrent_threads_per_session": subagents + 1,
     "features.multi_agent": undefined,
     "features.code_mode.excluded_tool_namespaces": undefined,
+    "features.code_mode.enabled": codeModeEnabled ? true : undefined,
     ...(subagents === 0
       ? {
           "agents.max_threads": undefined,
           "features.enable_fanout": false,
-          "features.code_mode.enabled": undefined,
         }
       : {
           "agents.max_threads": subagents,

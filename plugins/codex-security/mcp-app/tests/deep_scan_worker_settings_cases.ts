@@ -36,6 +36,7 @@ export async function testWorkerCyberAccessSettings({
   assertWorkerSubagentPolicy: (
     args: readonly string[],
     subagents: number,
+    codeModeEnabled?: boolean,
   ) => void;
   restoreEnv: (name: string, value: string | undefined) => void;
 }) {
@@ -430,7 +431,7 @@ export async function testWorkerCyberAccessSettings({
             resumeThreadId !== undefined,
           );
           assertReadOnlyWorkerPolicy(invocation.argv);
-          assertWorkerSubagentPolicy(invocation.argv, 0);
+          assertWorkerSubagentPolicy(invocation.argv, 0, kind === "dedup");
         }
         const parentReads = preflights.flatMap(({ invocation }) =>
           invocation.requests.filter(

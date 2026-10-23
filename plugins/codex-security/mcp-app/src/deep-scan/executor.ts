@@ -151,6 +151,7 @@ export class CodexSdkWorkerExecutor implements CodexWorkerExecutor {
         ...workerSubagentConfig(
           request.subagents,
           runtimeSettings.config.features,
+          request.kind,
         ),
         approval_policy: "never",
         default_permissions: DEEP_SCAN_WORKER_PERMISSION_PROFILE_ID,
@@ -380,14 +381,28 @@ export class CodexSdkWorkerExecutor implements CodexWorkerExecutor {
   }
 }
 
-function workerSubagentConfig(subagents: number, inheritedFeatures: unknown) {
+function workerSubagentConfig(
+  subagents: number,
+  inheritedFeatures: unknown,
+  kind: CodexWorkerRequest["kind"],
+) {
+  const inherited = isRecord(inheritedFeatures) ? inheritedFeatures : {};
+  const inheritedCodeMode = isRecord(inherited.code_mode)
+    ? inherited.code_mode
+    : {};
   return {
     // V1 counts children; V2 counts the root plus its children. Keeping its
     // feature disabled lets the model choose either runtime without rejecting
     // inherited agents.max_threads configuration.
     ...(subagents > 0 ? { agents: { max_threads: subagents } } : {}),
     features: {
-      ...(isRecord(inheritedFeatures) ? inheritedFeatures : {}),
+      ...inherited,
+      ...(kind === "dedup"
+        ? {
+            // The reducer prompt pages and assembles large inputs in code mode.
+            code_mode: { ...inheritedCodeMode, enabled: true },
+          }
+        : {}),
       multi_agent_v2: {
         enabled: false,
         max_concurrent_threads_per_session: subagents + 1,
