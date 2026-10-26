@@ -813,6 +813,12 @@ def begin_deep_scan_for_target(
     scope_file_count = directory_snapshot_regular_file_count(
         target if scope == "." else target / scope
     )
+    if scope_file_count == 0:
+        effective_deep_scan_config(args)
+        raise SystemExit(
+            "The selected Deep Scan scope contains no reviewable files; "
+            "no audit was performed. Select a scope with source files and try again."
+        )
     connection.execute("BEGIN IMMEDIATE")
     with connection:
         existing = existing_deep_scan_for_target(connection, thread_id, target_path, scope)
@@ -849,16 +855,16 @@ def begin_deep_scan_for_target(
             )
         if args.join_only:
             return {"newScanTarget": target_path}
-        source_scopes = capture_source_scopes(
-            target,
-            (revision, target_snapshot_digest, target_device, target_inode),
-            [scope],
-        )
         configuration = effective_deep_scan_config(args)
         config = configuration["settings"]
         workflow_version = optional_text(args.workflow_version, maximum=256)
         if workflow_version is None:
             raise SystemExit("workflow-version is required.")
+        source_scopes = capture_source_scopes(
+            target,
+            (revision, target_snapshot_digest, target_device, target_inode),
+            [scope],
+        )
         root = dependencies().resolve_scan_root(args.scan_root)
         target_root = (root / dependencies().safe_segment(target.name)).resolve()
         if target_root == target or target in target_root.parents:

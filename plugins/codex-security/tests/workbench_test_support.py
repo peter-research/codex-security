@@ -213,6 +213,11 @@ def run_workbench(
 def begin_deep_scan(
     state_dir: Path, thread_id: str, *extra: str, **options: Any
 ) -> dict[str, object]:
+    preserve_empty_target = options.pop("preserve_empty_target", False)
+    if not preserve_empty_target and "--target-path" in extra:
+        target_path = Path(extra[extra.index("--target-path") + 1])
+        if target_path.is_dir() and not any(path.is_file() for path in target_path.rglob("*")):
+            (target_path / "fixture.py").write_text("print('synthetic source')\n")
     return run_workbench(state_dir, "begin-deep-scan", "--thread-id", thread_id, *extra, **options)
 
 

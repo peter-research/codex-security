@@ -25,6 +25,7 @@ from workbench_test_support import (
     finish_deep_scan,
     get_deep_scan,
     get_scan,
+    initialize_git_repository,
     mark_deep_coordinator_succeeded,
     resume_deep_scan,
     run_workbench,
@@ -1487,6 +1488,39 @@ def test_target_begin_preserves_url_user_context(tmp_path: Path) -> None:
             user_context,
         )
         assert connection.execute("SELECT user_context FROM scans").fetchone() == (user_context,)
+
+
+def test_empty_child_scope_is_rejected_before_creating_a_deep_scan(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    codex_home = tmp_path / "codex-home"
+    repository = tmp_path / "repository"
+    initialize_git_repository(repository)
+    target = repository / "empty-child"
+    target.mkdir()
+
+    rejected = begin_deep_scan(
+        state_dir,
+        "thread-empty-target",
+        "--target-path",
+        str(target),
+        "--scope",
+        ".",
+        "--scan-root",
+        str(tmp_path / "scans"),
+        "--available-parallelism",
+        "16",
+        environment=deep_environment(codex_home),
+        check=False,
+        preserve_empty_target=True,
+    )
+
+    assert rejected["returncode"] != 0
+    assert "contains no reviewable files" in str(rejected["stderr"])
+    assert "no audit was performed" in str(rejected["stderr"])
+    assert not (tmp_path / "scans").exists()
+    with sqlite3.connect(state_dir / "workbench.sqlite3") as connection:
+        assert connection.execute("SELECT COUNT(*) FROM scans").fetchone() == (0,)
+        assert connection.execute("SELECT COUNT(*) FROM deep_scan_workers").fetchone() == (0,)
 
 
 @pytest.mark.parametrize(
