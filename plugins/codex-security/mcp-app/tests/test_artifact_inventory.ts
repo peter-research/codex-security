@@ -506,6 +506,13 @@ async function testPrepareUsesOnlyAuthoritativeDiffChanges() {
   await runGit(fixture.repoRoot, "commit", "-qm", "base");
   const baseRevision = await runGit(fixture.repoRoot, "rev-parse", "HEAD");
 
+  for (const [name, contents] of [
+    ["cgi/handler.cgi", "#!/usr/bin/perl\nprint 'cgi';\n"],
+    ["lib/App.pm", "package App;\n1;\n"],
+    ["script.pl", "#!/usr/bin/perl\nprint 'script';\n"],
+    ["t/basic.t", "use Test::More;\nok(1, 'test');\n"],
+  ])
+    await fixture.writeRepositoryFile(name, contents);
   await fixture.writeRepositoryFile(
     "src/changed.ts",
     "export const value = 2;\n",
@@ -531,13 +538,17 @@ async function testPrepareUsesOnlyAuthoritativeDiffChanges() {
   };
 
   assert.deepEqual(await inventory.prepareCodexSecurityReviewItems(context), {
-    reviewItemsTotal: 4,
+    reviewItemsTotal: 8,
   });
   assert.deepEqual(await inventory.listCodexSecurityReviewItems(context), {
     items: [
+      { path: "cgi/handler.cgi" },
+      { path: "lib/App.pm" },
+      { path: "script.pl" },
       { path: "src/changed.ts" },
       { path: "src/deleted.ts" },
       { path: "src/new.ts" },
+      { path: "t/basic.t" },
       { path: "tests/example.ts" },
     ],
   });
