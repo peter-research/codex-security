@@ -5904,7 +5904,6 @@ export async function main(
               imports.length === 0
                 ? undefined
                 : withoutLinearCredentials(dependencies.environment);
-            const response = captureOutput();
             const progress = new FindingProgressPresenter(
               errorOutput,
               dependencies,
@@ -5923,38 +5922,51 @@ export async function main(
               },
             });
             try {
-              exitCode = await runSkill(
-                "verify-fix",
-                selected === undefined ? [...positionals, ...imports] : [],
-                options,
-                response.stream,
-                verificationErrors,
-                dependencies,
-                {
-                  directory: repository,
-                  ...(selected === undefined
-                    ? {}
-                    : { findings: selected.findings }),
-                  auth: options.auth,
-                  verificationIds: identifiers,
-                  verificationMode: options.verificationMode,
-                  environment,
-                  onEvent: progress.observe.bind(progress),
-                },
-              );
-              if (exitCode !== 0) {
-                if (exitCode === 130 || exitCode === 143) {
-                  frameworkExit = exitCode;
-                  return undefined;
+              const findingBatches =
+                selected === undefined
+                  ? [undefined]
+                  : chunkVerifyFixFindings(selected.findings);
+              for (const findings of findingBatches) {
+                const response = captureOutput();
+                const batchIdentifiers =
+                  findings?.map(({ occurrenceId }) => occurrenceId) ??
+                  identifiers;
+                exitCode = await runSkill(
+                  "verify-fix",
+                  selected === undefined ? [...positionals, ...imports] : [],
+                  options,
+                  response.stream,
+                  verificationErrors,
+                  dependencies,
+                  {
+                    directory: repository,
+                    ...(findings === undefined ? {} : { findings }),
+                    auth: options.auth,
+                    verificationIds: batchIdentifiers,
+                    verificationMode: options.verificationMode,
+                    environment,
+                    onEvent: progress.observe.bind(progress),
+                  },
+                );
+                if (exitCode !== 0) {
+                  if (exitCode === 130 || exitCode === 143) {
+                    frameworkExit = exitCode;
+                    return undefined;
+                  }
+                  failureReported = diagnostics.text().trim().length > 0;
+                  throw new CodexSecurityError(
+                    diagnostics.text().trim() ||
+                      `Codex verification failed with exit code ${exitCode}.`,
+                  );
                 }
-                failureReported = diagnostics.text().trim().length > 0;
-                throw new CodexSecurityError(
-                  diagnostics.text().trim() ||
-                    `Codex verification failed with exit code ${exitCode}.`,
+
+                results.push(
+                  ...parseFindingVerifications(
+                    response.text(),
+                    batchIdentifiers,
+                  ),
                 );
               }
-
-              results = parseFindingVerifications(response.text(), identifiers);
               progress.complete(results);
               exitCode = results.some(({ status }) => status === "inconclusive")
                 ? 2
@@ -8421,6 +8433,37 @@ function captureOutput() {
   };
 }
 
+const MAX_VERIFY_FIX_PROMPT_CHARS = 1_048_576;
+const MAX_VERIFY_FIX_BATCH_CONTENT_CHARS = 768 * 1024;
+
+function chunkVerifyFixFindings(findings: readonly Finding[]): Finding[][] {
+  const batches: Finding[][] = [];
+  let batch: Finding[] = [];
+  let batchCharacters = 0;
+  for (const finding of findings) {
+    const findingCharacters = JSON.stringify(finding).length;
+    const identifierCharacters = JSON.stringify(finding.occurrenceId).length;
+    const candidateCharacters =
+      batchCharacters +
+      findingCharacters +
+      identifierCharacters +
+      (batch.length === 0 ? 4 : 2);
+    if (
+      batch.length > 0 &&
+      candidateCharacters > MAX_VERIFY_FIX_BATCH_CONTENT_CHARS
+    ) {
+      batches.push(batch);
+      batch = [];
+      batchCharacters = 0;
+    }
+    batchCharacters +=
+      findingCharacters + identifierCharacters + (batch.length === 0 ? 4 : 2);
+    batch.push(finding);
+  }
+  if (batch.length > 0) batches.push(batch);
+  return batches;
+}
+
 async function runSkill(
   skill: "validation" | "fix-finding" | "verify-fix" | "assess-patch-risk",
   inputs: readonly (string | ImportedIssue)[],
@@ -8625,6 +8668,11 @@ async function runSkill(
           JSON.stringify(contents),
         ]),
   ].join("\n");
+  if (verify && prompt.length > MAX_VERIFY_FIX_PROMPT_CHARS) {
+    throw new CodexSecurityError(
+      `Verification prompt exceeds Codex's maximum input length of ${MAX_VERIFY_FIX_PROMPT_CHARS} characters. Use fewer or smaller findings per verification request.`,
+    );
+  }
   if (assess) {
     prompt = [
       "Follow the bundled $codex-security:assess-patch-risk instructions and rubric included below. Do not reload these instruction files.",

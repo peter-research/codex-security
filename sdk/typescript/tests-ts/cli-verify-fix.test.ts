@@ -391,6 +391,80 @@ describe("read-only finding verification", () => {
     });
   });
 
+  test("batches large saved scans into bounded verification prompts", async () => {
+    const result = fakeResult(["high", "high", "high"]);
+    const findingDetails = "x".repeat(350_000);
+    result.findings.findings.forEach((finding, index) => {
+      Object.assign(finding, {
+        findingId: `csf_${index + 1}`,
+        occurrenceId: `occ_${index + 1}`,
+        title: `Finding ${index + 1}`,
+        details: findingDetails,
+      });
+    });
+    const batches: string[][] = [];
+    const stdout = captureCli(main, "stdout");
+
+    expect(
+      await stdout.run(
+        ["verify-fix", "--scan", "scan-1", "--severity", "high", "--json"],
+        dependencies({
+          onWorkbench: (args) => {
+            expect(args).toEqual(["get-scan", "--scan-id", "scan-1"]);
+            return {
+              scan: {
+                scanId: "scan-1",
+                targetPath: "/saved/repository",
+                findings: result.findings.findings as unknown as JsonObject[],
+              },
+            };
+          },
+          readSavedFindings: async () => result.findings.findings,
+          onCodex: (_args, output) => {
+            const prompt = output!.appServer!.prompt;
+            expect(prompt.length).toBeLessThanOrEqual(1_048_576);
+            const expectedLine = prompt
+              .split("\n")
+              .find((line) => line.startsWith("Expected result identifiers"))!;
+            const expectedIds = JSON.parse(
+              expectedLine.slice(
+                "Expected result identifiers (JSON array): ".length,
+              ),
+            ) as string[];
+            const findings = JSON.parse(
+              prompt.split("\n").at(-1)!,
+            ) as Finding[];
+            const ids = findings.map(({ occurrenceId }) => occurrenceId);
+            expect(expectedIds).toEqual(ids);
+            batches.push(ids);
+            output?.stdout.write(
+              JSON.stringify({
+                results: ids.map((id) => ({
+                  id,
+                  status: "fixed",
+                  evidence: "The original issue no longer reproduces.",
+                })),
+              }),
+            );
+            return 0;
+          },
+        }),
+      ),
+    ).toBe(0);
+
+    expect(batches).toHaveLength(2);
+    expect(batches.flat()).toEqual(["occ_1", "occ_2", "occ_3"]);
+    expect(JSON.parse(stdout.text())).toMatchObject({
+      repository: "/saved/repository",
+      scanId: "scan-1",
+      results: [
+        { id: "occ_1", status: "fixed" },
+        { id: "occ_2", status: "fixed" },
+        { id: "occ_3", status: "fixed" },
+      ],
+    });
+  });
+
   test("reports inconclusive findings without treating them as fixed", async () => {
     const stdout = captureCli(main, "stdout");
     expect(
