@@ -48,6 +48,7 @@ export async function testWorkerCyberAccessSettings({
     nativeProfile?: string;
     program?: string;
     parentProgram?: string;
+    parentServiceTier?: string;
     parentTurn?: { threadId: string; turnId: string };
     missingParentTurn?: boolean;
     failParentReadOnce?: boolean;
@@ -142,6 +143,20 @@ export async function testWorkerCyberAccessSettings({
       features: { api_key_cyber_access_programs: true },
     },
     {
+      name: "parent-default-speed",
+      configuration:
+        'service_tier = "ultrafast"\n[codex_security]\ncyber_access_program = "standard"\n',
+      program: "standard",
+      parentProgram: "standard",
+      parentServiceTier: "default",
+      parentTurn: {
+        threadId: "parent-default-speed",
+        turnId: "active-default",
+      },
+      serviceTier: "default",
+      features: { api_key_cyber_access_programs: true },
+    },
+    {
       name: "parent-native-home",
       program: "standard",
       parentProgram: "standard",
@@ -202,14 +217,23 @@ export async function testWorkerCyberAccessSettings({
   ].map((name) => [name, process.env[name]] as const);
   const originalSpawn = childProcess.spawn;
   const fixture = await fakeCodexFixture();
-  const writeParentTurn = (threadId: string, turnId: string, program: string) =>
+  const writeParentTurn = (
+    threadId: string,
+    turnId: string,
+    program: string,
+    serviceTier?: string,
+  ) =>
     writeFile(
       path.join(fixture.root, `${threadId}.jsonl`),
       [
         { type: "session_meta", payload: { id: threadId } },
         {
           type: "turn_context",
-          payload: { turn_id: turnId, cyber_access_program: program },
+          payload: {
+            turn_id: turnId,
+            cyber_access_program: program,
+            ...(serviceTier === undefined ? {} : { service_tier: serviceTier }),
+          },
         },
       ]
         .map((record) => JSON.stringify(record))
@@ -296,6 +320,7 @@ export async function testWorkerCyberAccessSettings({
             ? "different-turn"
             : testCase.parentTurn.turnId,
           testCase.parentProgram!,
+          testCase.parentServiceTier,
         );
       }
       testCase.executor = new CodexSdkWorkerExecutor({
@@ -457,12 +482,14 @@ export async function testWorkerCyberAccessSettings({
           features,
           parentTurn,
           parentProgram,
+          parentServiceTier,
         } of cases) {
           if (parentTurn !== undefined) {
             await writeParentTurn(
               parentTurn.threadId,
               parentTurn.turnId,
               parentProgram === "standard" ? "daybreak_blue" : "standard",
+              parentServiceTier,
             );
           }
           if (configPath !== undefined) {

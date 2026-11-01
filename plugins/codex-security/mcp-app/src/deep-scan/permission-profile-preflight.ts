@@ -84,12 +84,17 @@ export interface DeepScanParentTurn {
   readonly turnId: string;
 }
 
-/** Read the program of the exact parent turn that invoked the plugin. */
-export async function readDeepScanParentCyberAccessProgram(
+export interface DeepScanParentTurnSettings {
+  readonly cyberAccessProgram?: CyberAccessProgram;
+  readonly serviceTier?: string;
+}
+
+/** Read settings from the exact parent turn that invoked the plugin. */
+export async function readDeepScanParentTurnSettings(
   options: RuntimeConfigReadOptions & {
     readonly parentTurn: DeepScanParentTurn;
   },
-): Promise<CyberAccessProgram | undefined> {
+): Promise<DeepScanParentTurnSettings | undefined> {
   return withPreflightClient(options, async (client) => {
     let response: JsonRecord;
     try {
@@ -126,9 +131,14 @@ export async function readDeepScanParentCyberAccessProgram(
         const context = record(entry.payload);
         if (context?.turn_id !== options.parentTurn.turnId) continue;
         const program = context.cyber_access_program;
-        return typeof program === "string"
-          ? (program as CyberAccessProgram)
-          : undefined;
+        const serviceTier = context.service_tier;
+        const settings: DeepScanParentTurnSettings = {
+          ...(typeof program === "string"
+            ? { cyberAccessProgram: program as CyberAccessProgram }
+            : {}),
+          ...(typeof serviceTier === "string" ? { serviceTier } : {}),
+        };
+        return Object.keys(settings).length > 0 ? settings : undefined;
       }
       return undefined;
     } finally {
@@ -136,6 +146,15 @@ export async function readDeepScanParentCyberAccessProgram(
       input.destroy();
     }
   });
+}
+
+/** Read the program of the exact parent turn that invoked the plugin. */
+export async function readDeepScanParentCyberAccessProgram(
+  options: RuntimeConfigReadOptions & {
+    readonly parentTurn: DeepScanParentTurn;
+  },
+): Promise<CyberAccessProgram | undefined> {
+  return (await readDeepScanParentTurnSettings(options))?.cyberAccessProgram;
 }
 
 /** Persist the owning session and obtain native permissions without a model turn. */

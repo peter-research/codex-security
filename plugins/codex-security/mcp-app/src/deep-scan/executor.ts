@@ -42,8 +42,9 @@ import {
   DEEP_SCAN_WORKER_PERMISSION_PROFILE_ID,
   deepScanPermissionProfileFallbackError,
   preflightDeepScanWorkerPermissionProfile,
-  readDeepScanParentCyberAccessProgram,
+  readDeepScanParentTurnSettings,
   type DeepScanParentTurn,
+  type DeepScanParentTurnSettings,
 } from "./permission-profile-preflight.js";
 import type { DeepWorkerParentSandbox } from "./parent-sandbox.js";
 import type {
@@ -84,7 +85,7 @@ interface CodexSdkWorkerRuntimeSettings {
 
 export class CodexSdkWorkerExecutor implements CodexWorkerExecutor {
   private runtimeSettings?: Promise<CodexSdkWorkerRuntimeSettings>;
-  private parentCyberAccessProgram?: Promise<CyberAccessProgram | undefined>;
+  private parentTurnSettings?: Promise<DeepScanParentTurnSettings | undefined>;
 
   constructor(
     private readonly modelSettings: CodexSdkWorkerModelSettings = {},
@@ -212,16 +213,24 @@ export class CodexSdkWorkerExecutor implements CodexWorkerExecutor {
         env: childEnv,
         signal: request.signal,
       };
-      const parentProgram = this.modelSettings.parentTurn
-        ? await (this.parentCyberAccessProgram ??=
-            readDeepScanParentCyberAccessProgram({
-              ...preflightOptions,
-              parentTurn: this.modelSettings.parentTurn,
-            }).catch((error: unknown) => {
-              this.parentCyberAccessProgram = undefined;
-              throw error;
-            }))
+      const parentSettings = this.modelSettings.parentTurn
+        ? await (this.parentTurnSettings ??= readDeepScanParentTurnSettings({
+            ...preflightOptions,
+            parentTurn: this.modelSettings.parentTurn,
+          }).catch((error: unknown) => {
+            this.parentTurnSettings = undefined;
+            throw error;
+          }))
         : undefined;
+      const parentProgram = parentSettings?.cyberAccessProgram;
+      if (parentSettings?.serviceTier !== undefined) {
+        const serviceTierOverride = `service_tier=${JSON.stringify(parentSettings.serviceTier)}`;
+        const existingOverride = configOverrides.findIndex((override) =>
+          override.startsWith("service_tier="),
+        );
+        if (existingOverride === -1) configOverrides.push(serviceTierOverride);
+        else configOverrides[existingOverride] = serviceTierOverride;
+      }
       const workerFeatures = runtimeSettings.config.features;
       if (
         parentProgram !== undefined &&
