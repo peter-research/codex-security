@@ -822,6 +822,11 @@ export function windowsCredentialAncestorAclScript(path: string): string {
   ].join("\n");
 }
 
+/** Use extended-length paths for Windows PowerShell filesystem cmdlets. */
+export function windowsCredentialPowerShellPath(path: string): string {
+  return win32.toNamespacedPath(path);
+}
+
 export async function inspectWindowsCredentialAclSnapshot(
   path: string,
   currentUserSid: string,
@@ -963,6 +968,9 @@ export async function inspectWindowsCredentialAclSnapshot(
 
 async function secureWindowsCredentialHome(path: string): Promise<void> {
   const ancestorAclScript = windowsCredentialAncestorAclScript(path);
+  const pluginCachePath = windowsCredentialPowerShellPath(
+    win32.join(path, ".tmp", "plugins"),
+  );
   const systemRoot = process.env["SystemRoot"] ?? "C:\\Windows";
   const systemDirectory = join(systemRoot, "System32");
   const powershell = join(
@@ -980,6 +988,7 @@ async function secureWindowsCredentialHome(path: string): Promise<void> {
     env: {
       ...inheritedEnvironment,
       CODEX_SECURITY_CREDENTIAL_ACL_PATH: path,
+      CODEX_SECURITY_CREDENTIAL_PLUGIN_CACHE_PATH: pluginCachePath,
       PSModulePath: join(
         systemDirectory,
         "WindowsPowerShell",
@@ -1010,13 +1019,20 @@ async function secureWindowsCredentialHome(path: string): Promise<void> {
   const script = [
     "$ErrorActionPreference = 'Stop'",
     "$script:descriptorCount = 0",
-    "function Write-CredentialAcl($path) { $descriptor = Microsoft.PowerShell.Security\\Get-Acl -LiteralPath $path | Microsoft.PowerShell.Utility\\Select-Object -ExpandProperty Sddl; if (-not $descriptor) { throw 'Windows credential ACL could not be verified' }; $script:descriptorCount += 1; $descriptor }",
+    String.raw`function ConvertTo-CredentialLongPath($path) { if ($path.StartsWith('\\?\')) { return $path }; if ($path.StartsWith('\\')) { return ('\\?\UNC\' + $path.Substring(2)) }; return ('\\?\' + $path) }`,
+    "$script:credentialHomePath = ConvertTo-CredentialLongPath $env:CODEX_SECURITY_CREDENTIAL_ACL_PATH",
+    "$script:pluginCachePath = ConvertTo-CredentialLongPath $env:CODEX_SECURITY_CREDENTIAL_PLUGIN_CACHE_PATH",
+    "function Write-CredentialAcl($path) { $longPath = ConvertTo-CredentialLongPath $path; $descriptor = Microsoft.PowerShell.Security\\Get-Acl -LiteralPath $longPath | Microsoft.PowerShell.Utility\\Select-Object -ExpandProperty Sddl; if (-not $descriptor) { throw 'Windows credential ACL could not be verified' }; $script:descriptorCount += 1; $descriptor }",
     "function Read-CredentialDescendants($path) {",
+    "  $path = ConvertTo-CredentialLongPath $path",
+    // The curated plugin cache is not credential data. Verify its root ACL and
+    // reparse-point status, but do not walk thousands of cached source files.
+    "  if ($path -ieq $script:pluginCachePath) { return }",
     "  try { $entries = @(Microsoft.PowerShell.Management\\Get-ChildItem -LiteralPath $path -Force) } catch {",
     // A child can disappear while an existing directory is being enumerated.
     // Retry that incomplete listing before accepting a vanished descendant.
     `    if ($_.FullyQualifiedErrorId -eq 'System.IO.FileNotFoundException,Microsoft.PowerShell.Commands.GetChildItemCommand') { exit ${WINDOWS_CREDENTIAL_DESCENDANTS_CHANGED_EXIT_CODE} }`,
-    "    if ($path -ne $env:CODEX_SECURITY_CREDENTIAL_ACL_PATH -and $_.CategoryInfo.Category -eq 'ObjectNotFound') { return }",
+    "    if ($path -ine $script:credentialHomePath -and $_.CategoryInfo.Category -eq 'ObjectNotFound') { return }",
     "    throw",
     "  }",
     "  foreach ($entry in $entries) {",
@@ -1028,7 +1044,7 @@ async function secureWindowsCredentialHome(path: string): Promise<void> {
     "      if ($_.FullyQualifiedErrorId -like 'GetAcl_PathNotFound,*') { continue }",
     "      throw",
     "    }",
-    "    if ($entry.PSIsContainer) { Read-CredentialDescendants $entry.FullName }",
+    "    if ($entry.PSIsContainer) { Read-CredentialDescendants (ConvertTo-CredentialLongPath $entry.FullName) }",
     "  }",
     "}",
     ancestorAclScript,

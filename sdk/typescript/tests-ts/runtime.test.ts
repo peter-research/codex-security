@@ -98,6 +98,7 @@ import {
   setCodexSecurityCredentialLogout,
   streamWindowsCredentialAclDescriptors,
   windowsCredentialAncestorAclScript,
+  windowsCredentialPowerShellPath,
 } from "../src/runtime.js";
 import { inspectTrustedExecutable } from "../src/trusted-executable.js";
 import { PLUGIN_ROOT } from "./plugin-root.js";
@@ -4050,6 +4051,17 @@ describe("runtime directories and plugin Python boundary", () => {
     },
   );
 
+  test.each([
+    [String.raw`C:\Users\test\state`, String.raw`\\?\C:\Users\test\state`],
+    [String.raw`\\server\share\state`, String.raw`\\?\UNC\server\share\state`],
+    [String.raw`\\?\C:\state`, String.raw`\\?\C:\state`],
+  ])(
+    "uses extended-length paths for PowerShell filesystem calls: %s",
+    (path, expected) => {
+      expect(windowsCredentialPowerShellPath(path)).toBe(expected);
+    },
+  );
+
   test("names the outermost Windows ancestor that allows replacement", async () => {
     const { home } = await credentialHome(false);
     const sid = "S-1-5-21-111-222-333-1001";
@@ -4898,6 +4910,25 @@ describe("runtime directories and plugin Python boundary", () => {
         "synthetic outside credential\n",
       );
       await rename(outside, join(root, "moved-outside"));
+      await expect(requireSecureCredentialHome(home)).rejects.toThrow(
+        "Windows credential home contains a symbolic link or junction",
+      );
+    },
+  );
+
+  test.skipIf(process.platform !== "win32")(
+    "does not recurse into the curated plugin cache but still rejects junctions elsewhere",
+    async () => {
+      const { root, home } = await credentialHome(true);
+      const outside = join(root, "outside");
+      const pluginTree = join(home, ".tmp", "plugins", "nested");
+      await mkdir(outside);
+      await mkdir(pluginTree, { recursive: true });
+      await symlink(outside, join(pluginTree, "plugin-link"), "junction");
+
+      await expect(requireSecureCredentialHome(home)).resolves.toBeDefined();
+
+      await symlink(outside, join(home, ".tmp", "other-cache"), "junction");
       await expect(requireSecureCredentialHome(home)).rejects.toThrow(
         "Windows credential home contains a symbolic link or junction",
       );
