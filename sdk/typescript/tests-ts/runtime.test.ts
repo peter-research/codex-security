@@ -1724,6 +1724,38 @@ for await (const line of createInterface({ input: process.stdin })) {
     }
   });
 
+  test("does not clone ChatGPT refresh tokens but still imports API keys", async () => {
+    const root = await temporaryDirectory();
+    const ambient = join(root, "ambient");
+    const isolated = join(root, "isolated");
+    await mkdir(ambient);
+    const authPath = join(ambient, "auth.json");
+    await writeFile(
+      authPath,
+      JSON.stringify({
+        auth_mode: "chatgpt",
+        tokens: {
+          access_token: "synthetic-access-token",
+          refresh_token: "synthetic-single-use-refresh-token",
+        },
+      }),
+    );
+
+    expect(await importAmbientAuth(ambient, isolated)).toBe(false);
+    await expect(readFile(join(isolated, "auth.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    await writeFile(
+      authPath,
+      JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: "synthetic-key" }),
+    );
+    expect(await importAmbientAuth(ambient, isolated)).toBe(true);
+    expect(await readFile(join(isolated, "auth.json"), "utf8")).toBe(
+      JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: "synthetic-key" }),
+    );
+  });
+
   test("imports ambient auth when credential files do not support hard links", async () => {
     if (
       runTestInSubprocess(

@@ -2332,6 +2332,20 @@ export async function createIsolatedHome(
   }
 }
 
+function ambientAuthUsesRotatingRefreshToken(contents: Buffer): boolean {
+  try {
+    const parsed: unknown = JSON.parse(contents.toString("utf8"));
+    if (!isRecord(parsed)) return false;
+    if (parsed["auth_mode"] === "chatgpt") return true;
+    const tokens = parsed["tokens"];
+    return isRecord(tokens) && isNonEmptyString(tokens["refresh_token"]);
+  } catch {
+    // Leave malformed auth files to Codex so its existing diagnostic remains
+    // available instead of changing the import path's error behavior.
+    return false;
+  }
+}
+
 export async function importAmbientAuth(
   ambientHome: string,
   isolatedHome: string,
@@ -2360,7 +2374,15 @@ export async function importAmbientAuth(
   const destination = join(isolatedHome, "auth.json");
   const temporary = join(isolatedHome, `.auth-${randomUUID()}.tmp`);
   try {
-    await copyFile(source, temporary, constants.COPYFILE_EXCL);
+    const contents = await readFile(source);
+    // ChatGPT-managed auth.json files contain a single-use refresh token.
+    // Copying them creates independent caches, so one Codex home can rotate
+    // the token and invalidate the other. API-key auth remains importable.
+    if (ambientAuthUsesRotatingRefreshToken(contents)) return false;
+    await writeFile(temporary, contents, {
+      flag: "wx",
+      mode: 0o600,
+    });
     await chmod(temporary, 0o600);
     try {
       try {
