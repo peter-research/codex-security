@@ -2629,18 +2629,20 @@ export class CodexSecurity {
         // Reload inherited file settings, retaining explicit refinements omitted
         // from the readable recipe in the existing private replay snapshot.
         delete recipeConfig["model_providers"];
-        const replayOverrides = privateReplayOverrides(overrides, recipeConfig);
-        resolveNestedConfigPaths(replayOverrides, scanDir);
-        if (
-          options.resumeScanId === undefined &&
-          Object.keys(replayOverrides).length > 0
-        ) {
-          savedProviderProfile = await createProviderProfile(
-            codexSecurityCredentialHome(this.#dependencies.environment),
-            replayOverrides,
-            { replay: true },
-          );
-        }
+      }
+      // Keep settings intentionally omitted from the readable recipe in a
+      // private replay profile, including custom API endpoints.
+      const replayOverrides = privateReplayOverrides(overrides, recipeConfig);
+      resolveNestedConfigPaths(replayOverrides, scanDir);
+      if (
+        options.resumeScanId === undefined &&
+        Object.keys(replayOverrides).length > 0
+      ) {
+        savedProviderProfile = await createProviderProfile(
+          codexSecurityCredentialHome(this.#dependencies.environment),
+          replayOverrides,
+          { replay: true },
+        );
       }
       const scanKnowledge =
         knowledgeBase === null ? undefined : options.knowledgeBaseSnapshot;

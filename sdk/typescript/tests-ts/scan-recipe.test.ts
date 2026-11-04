@@ -116,6 +116,69 @@ test.each(
   },
 );
 
+test("saved recipes keep custom OpenAI endpoints in the private replay profile", async () => {
+  const root = await temporaryDirectory();
+  const repository = join(root, "repository");
+  const home = join(root, "home");
+  const runtimeHome = join(root, "runtime-home");
+  const scanDir = join(root, "scan");
+  await Promise.all([mkdir(repository), mkdir(home), mkdir(runtimeHome)]);
+  await mkdir(scanDir, { mode: 0o700 });
+  await writeFile(join(repository, "source.py"), "value = 1\n");
+  const endpoint = "http://127.0.0.1:8080/v1";
+  const environment = {
+    CODEX_HOME: home,
+    CODEX_SECURITY_STATE_DIR: join(root, "state"),
+    OPENAI_API_KEY: "synthetic-launch-key",
+    PATH: process.env["PATH"],
+  };
+  let recipe: JsonObject | undefined;
+  const client = new TestClient(
+    {
+      pluginPath: PLUGIN_ROOT,
+      codexOverrides: { openai_base_url: endpoint },
+    },
+    {
+      environment,
+      ...scanRuntimeDependencies(runtimeHome, scanDir),
+      createCodex: completedCodex(root),
+      runWorkbench: async (_runtime, args, input) => {
+        if (args[0] === "register-cli-scan") {
+          recipe = JSON.parse(input!)?.recipe as JsonObject;
+        }
+        return mockWorkbench(args, input);
+      },
+    },
+  );
+  try {
+    await client.run(repository);
+  } finally {
+    await client.close();
+  }
+
+  expect(recipe).toBeDefined();
+  expect(recipe).not.toHaveProperty("config.openai_base_url");
+  expect(recipe?.["providerProfile"]).toMatchObject({ home: "managed" });
+  const profile = recipe!["providerProfile"] as JsonObject;
+  const privateConfig = JSON.parse(
+    await readFile(
+      join(
+        codexSecurityCredentialHome(environment),
+        `${profile["name"]}.config.json`,
+      ),
+      "utf8",
+    ),
+  );
+  expect(privateConfig).toEqual({ openai_base_url: endpoint });
+  expect(
+    await restoreProviderProfile(
+      recipe!["config"] as JsonObject,
+      profile,
+      environment,
+    ),
+  ).toMatchObject({ openai_base_url: endpoint });
+});
+
 test.each(
   (["openrouter", "fireworks", "gateway"] as const).flatMap((provider) =>
     (["standard", "deep"] as const).flatMap((mode) =>
