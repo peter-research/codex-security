@@ -17,6 +17,12 @@ inputs:
   mode:
     description: 'standard or deep. Deep supports repository scans, including selected paths; not diff scans.'
     default: standard
+  use-runner-npm-config:
+    description: 'Use runner-managed NPM_CONFIG_USERCONFIG for CLI installation only. The config file must be an absolute path to a regular file; registry credentials are never forwarded to scans.'
+    default: 'false'
+  use-runner-npm-ca:
+    description: 'Use runner-managed NODE_EXTRA_CA_CERTS for CLI installation only. The certificate file must be an absolute path to a regular file; it is never forwarded to scans.'
+    default: 'false'
   provider:
     description: "Providers supported by the Action: openai, openrouter, fireworks, or amazon-bedrock. Pass the selected provider's credentials to the scan step."
     default: openai

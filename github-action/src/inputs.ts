@@ -1,6 +1,6 @@
 export const INPUT_NAMES = [
   'repository', 'scope', 'paths', 'diff-base', 'mode',
-  'provider', 'model', 'cyber-access-program', 'effort', 'max-cost', 'max-time-hours', 'fail-on-severity', 'verbose', 'dry-run',
+  'provider', 'model', 'use-runner-npm-config', 'use-runner-npm-ca', 'cyber-access-program', 'effort', 'max-cost', 'max-time-hours', 'fail-on-severity', 'verbose', 'dry-run',
   'summary', 'annotations',
   'upload-artifacts', 'artifact-name', 'retention-days',
 ] as const;
@@ -56,6 +56,7 @@ export function parseInputs(read: (name: string) => string, workspace: string) {
     : undefined;
   return {
     repository: str('repository', workspace), scope, paths, diffBase, mode, cyberAccessProgram,
+    useRunnerNpmConfig: bool('use-runner-npm-config', false), useRunnerNpmCa: bool('use-runner-npm-ca', false),
     provider, model, effort: str('effort', 'xhigh'),
     maxCost: num('max-cost', false, Number.MIN_VALUE), maxTimeHours, failOnSeverity,
     verbose: bool('verbose', true), dryRun,

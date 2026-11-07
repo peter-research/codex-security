@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, writeFile, readFile, realpath, symlink, rm, stat } from
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { captureRunnerPath, checkPython, checkSandbox, ensureSandbox, cleanupRuntime, resolveTool, runtimeEnvironment, SandboxUnavailableError, scanCredentials, setupRuntime, writeRuntimeLauncher } from '../src/runtime.ts';
+import { captureRunnerPath, checkPython, checkSandbox, ensureSandbox, cleanupRuntime, resolveTool, runtimeEnvironment, runnerManagedFile, SandboxUnavailableError, scanCredentials, setupRuntime, writeRuntimeLauncher } from '../src/runtime.ts';
 import { runProcess } from '../src/process.ts';
 
 test('tool discovery preserves the selected PATH launcher spelling', async (t) => {
@@ -51,6 +51,8 @@ test('runtime installation accepts npm shell shims and uses the Action Node exec
   const previousTrackingId = process.env.RUNNER_TRACKING_ID;
   const previousLibraryPath = process.env.LD_LIBRARY_PATH;
   const previousRunnerEnvironment = process.env.RUNNER_ENVIRONMENT;
+  const previousNpmConfig = process.env.NPM_CONFIG_USERCONFIG;
+  const previousCa = process.env.NODE_EXTRA_CA_CERTS;
   t.after(async () => {
     if (previousPath === undefined) delete process.env.PATH;
     else process.env.PATH = previousPath;
@@ -60,6 +62,10 @@ test('runtime installation accepts npm shell shims and uses the Action Node exec
     else process.env.LD_LIBRARY_PATH = previousLibraryPath;
     if (previousRunnerEnvironment === undefined) delete process.env.RUNNER_ENVIRONMENT;
     else process.env.RUNNER_ENVIRONMENT = previousRunnerEnvironment;
+    if (previousNpmConfig === undefined) delete process.env.NPM_CONFIG_USERCONFIG;
+    else process.env.NPM_CONFIG_USERCONFIG = previousNpmConfig;
+    if (previousCa === undefined) delete process.env.NODE_EXTRA_CA_CERTS;
+    else process.env.NODE_EXTRA_CA_CERTS = previousCa;
     await rm(root, { recursive: true, force: true });
   });
   const bin = join(root, 'tools');
@@ -91,13 +97,19 @@ fs.writeFileSync(path.join(packageRoot, 'dist/runtime.js'), [
 ].join('\n'));
 NODE
 `, {mode:0o755});
+  const configFile = join(root, 'runner-npm.conf');
+  const caFile = join(root, 'runner-ca.pem');
+  await writeFile(configFile, '// synthetic private config fixture');
+  await writeFile(caFile, '// synthetic CA fixture');
+  process.env.NPM_CONFIG_USERCONFIG = configFile;
+  process.env.NODE_EXTRA_CA_CERTS = caFile;
   process.env.RUNNER_ENVIRONMENT = 'self-hosted';
   process.env.PATH = `${relative(process.cwd(), bin)}:`;
   process.env.RUNNER_TRACKING_ID = 'synthetic-first-job';
   const libraryPath = (previousLibraryPath === undefined ? '' : previousLibraryPath + ':') + '/synthetic-first-library';
   process.env.LD_LIBRARY_PATH = libraryPath;
   const captured = captureRunnerPath();
-  const runtime = await setupRuntime({actionRoot:fileURLToPath(new URL('../', import.meta.url)), tempRoot:root, repository, provider:'openrouter', model:'example/model'});
+  const runtime = await setupRuntime({actionRoot:fileURLToPath(new URL('../', import.meta.url)), tempRoot:root, repository, provider:'openrouter', model:'example/model', useRunnerNpmConfig:true, useRunnerNpmCa:true});
   const invocation = JSON.parse(await readFile(join(runtime.root, 'install', 'npm-invocation.json'), 'utf8'));
   assert.equal(invocation.nodePath, process.execPath);
   assert.equal(invocation.cwd, join(runtime.root, 'install'));
@@ -105,13 +117,19 @@ NODE
   assert.ok(invocation.args.includes('--ignore-scripts'));
   assert.ok(invocation.args.includes('--include=optional'));
   assert.ok(invocation.args.includes('--registry=https://registry.npmjs.org/'));
+  assert.ok(invocation.args.includes(`--userconfig=${configFile}`));
+  assert.equal(invocation.env.NPM_CONFIG_USERCONFIG, configFile);
+  assert.equal(invocation.env.NODE_EXTRA_CA_CERTS, caFile);
   assert.equal(invocation.env.PATH, `${join(runtime.root, 'bin')}:${captured}`);
   assert.equal(invocation.env.RUNNER_TRACKING_ID, 'synthetic-first-job');
   assert.equal(invocation.env.LD_LIBRARY_PATH, libraryPath);
   assert.equal(invocation.env.OPENAI_API_KEY, undefined);
   assert.equal(invocation.env.ACTIONS_RUNTIME_TOKEN, undefined);
+  assert.equal(invocation.args.includes('--ignore-scripts'), true);
   const credentials = scanCredentials('openai', {OPENAI_API_KEY:'synthetic-scan-key'});
   assert.equal(runtime.env(credentials).PYTHON, 'python3');
+  assert.equal(runtime.env(credentials).NPM_CONFIG_USERCONFIG, undefined);
+  assert.equal(runtime.env(credentials).NODE_EXTRA_CA_CERTS, undefined);
   assert.equal(runtime.env(credentials).CODEX_MCP_NODE_PATH, join(runtime.root, 'bin', 'node'));
   const sandboxInvocation = JSON.parse(await readFile(join(repository, 'sandbox-invocation.json'), 'utf8'));
   assert.equal(sandboxInvocation.command.command, join(runtime.root, 'probe-home', 'synthetic-codex'));
@@ -120,6 +138,8 @@ NODE
   assert.equal(sandboxInvocation.env.PATH, invocation.env.PATH);
   assert.equal(sandboxInvocation.env.OPENAI_API_KEY, undefined);
   assert.equal(sandboxInvocation.env.ACTIONS_RUNTIME_TOKEN, undefined);
+  assert.equal(sandboxInvocation.env.NPM_CONFIG_USERCONFIG, undefined);
+  assert.equal(sandboxInvocation.env.NODE_EXTRA_CA_CERTS, undefined);
   process.env.RUNNER_TRACKING_ID = 'synthetic-later-job';
   process.env.LD_LIBRARY_PATH = '/synthetic-later-library';
   assert.equal(runtime.env(credentials).RUNNER_TRACKING_ID, 'synthetic-first-job');
@@ -492,4 +512,20 @@ for (const aptExit of [0, 17]) test(`hosted install with needrestart=${hasNeedre
   } else assert.equal(fs.existsSync(conf), false);
   assert.equal(probes, aptExit === 0 ? 2 : 1);
   assert.equal(calls.length, aptExit === 0 ? 3 : 2);
+});
+
+test('runner-managed npm files require absolute paths to regular files without exposing paths', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'runtime-runner-file-'));
+  t.after(() => rm(root, {recursive:true, force:true}));
+  const file = join(root, 'private-config');
+  await writeFile(file, 'synthetic private content');
+  assert.equal(await runnerManagedFile(file, 'NPM_CONFIG_USERCONFIG'), file);
+  for (const value of [undefined, 'relative-config', join(root, 'missing'), root]) {
+    await assert.rejects(runnerManagedFile(value, 'NPM_CONFIG_USERCONFIG'), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, 'Runner NPM_CONFIG_USERCONFIG must be an absolute path to a regular file.');
+      assert.equal(error.message.includes(String(value)), false);
+      return true;
+    });
+  }
 });

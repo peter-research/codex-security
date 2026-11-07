@@ -654,6 +654,8 @@ Inputs are strings. Quote booleans and use newline-separated literal paths for l
 | `paths` | Unset | Newline-delimited literal repository-relative files or folders. Only for repository scope; no glob expansion. |
 | `diff-base` | Unset | Diff base revision. Defaults to the PR merge base; required outside PRs when scope is diff. |
 | `mode` | `standard` | standard or deep. Deep supports repository scans, including selected paths; not diff scans. |
+| `use-runner-npm-config` | `false` | Use runner-managed NPM_CONFIG_USERCONFIG for CLI installation only. The config file must be an absolute path to a regular file; registry credentials are never forwarded to scans. |
+| `use-runner-npm-ca` | `false` | Use runner-managed NODE_EXTRA_CA_CERTS for CLI installation only. The certificate file must be an absolute path to a regular file; it is never forwarded to scans. |
 | `provider` | `openai` | Providers supported by the Action: openai, openrouter, fireworks, or amazon-bedrock. Pass the selected provider's credentials to the scan step. |
 | `model` | Unset | Model to scan with, passed to scan --model. Defaults to gpt-5.6-sol for OpenAI; other providers require an explicit model ID. Cost limits require CLI pricing support for the model. |
 | `cyber-access-program` | Unset | Optional Cyber access program: standard, daybreak_blue, or daybreak_red. Unset preserves CLI defaults. Daybreak selections require approved organization and enabled API project access; model access is checked separately. |

@@ -92,7 +92,7 @@ export async function runAction(actionRoot: string, overrides: Partial<Dependenc
       const preparationStarted = performance.now();
       let timer = heartbeat('CLI preparation', preparationStarted);
       try {
-        runtime = await deps.setupRuntime({actionRoot, tempRoot, repository: target.repository, provider: inputs.provider, model: inputs.model, log: inputs.verbose ? core.info : undefined});
+        runtime = await deps.setupRuntime({actionRoot, tempRoot, repository: target.repository, provider: inputs.provider, model: inputs.model, useRunnerNpmConfig: inputs.useRunnerNpmConfig, useRunnerNpmCa: inputs.useRunnerNpmCa, log: inputs.verbose ? core.info : undefined});
       }
       finally { clearInterval(timer); }
       core.info(`CLI preparation completed in ${elapsed(preparationStarted)}.`);

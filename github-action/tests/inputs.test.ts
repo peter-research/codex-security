@@ -7,7 +7,7 @@ test('defaults are stable across events', () => {
   const input = parse();
   assert.deepEqual(input, {
     repository: '/checkout', scope: 'repository', paths: [], diffBase: undefined, mode: 'standard', cyberAccessProgram: undefined,
-    provider: 'openai', model: 'gpt-5.6-sol', effort: 'xhigh', maxCost: undefined, maxTimeHours: undefined, failOnSeverity: 'none',
+    useRunnerNpmConfig: false, useRunnerNpmCa: false, provider: 'openai', model: 'gpt-5.6-sol', effort: 'xhigh', maxCost: undefined, maxTimeHours: undefined, failOnSeverity: 'none',
     verbose: true, dryRun: false, summary: true, annotations: true,
     uploadArtifacts: false, artifactName: 'codex-security', retentionDays: 7,
   });
@@ -171,4 +171,10 @@ test('literal tilde folders remain repository-relative when forwarded to the CLI
   const args = scanArguments(input, {repository:'/checkout'}, '/results');
   assert.deepEqual(args.filter(arg => arg.startsWith('--path=')),
     ['--path=./~/example.ts', '--path=./~', '--path=./module:handler.ts']);
+});
+
+test('runner npm configuration forwarding inputs default off', () => {
+  const inputs = parseInputs(() => '', '/workspace');
+  assert.equal(inputs.useRunnerNpmConfig, false);
+  assert.equal(inputs.useRunnerNpmCa, false);
 });

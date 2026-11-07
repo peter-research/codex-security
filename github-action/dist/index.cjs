@@ -53781,6 +53781,8 @@ function parseInputs(read, workspace) {
     diffBase,
     mode,
     cyberAccessProgram,
+    useRunnerNpmConfig: bool("use-runner-npm-config", false),
+    useRunnerNpmCa: bool("use-runner-npm-ca", false),
     provider,
     model,
     effort: str("effort", "xhigh"),
@@ -54198,6 +54200,14 @@ function runtimeEnvironment(paths, credentials) {
   }
   return env;
 }
+async function runnerManagedFile(value, variable) {
+  if (!value || !(0, import_node_path4.isAbsolute)(value)) throw new Error(`Runner ${variable} must be an absolute path to a regular file.`);
+  try {
+    return await regularFile(value);
+  } catch {
+    throw new Error(`Runner ${variable} must be an absolute path to a regular file.`);
+  }
+}
 async function regularFile(path6) {
   const target = await (0, import_promises3.realpath)(path6);
   const info2 = await (0, import_promises3.lstat)(target);
@@ -54345,7 +54355,16 @@ async function setupRuntime(options) {
     const globalConfig = (0, import_node_path4.join)(root, "npm-global.conf");
     await (0, import_promises3.writeFile)(userConfig, "", { mode: 384, flag: "wx" });
     await (0, import_promises3.writeFile)(globalConfig, "", { mode: 384, flag: "wx" });
-    const install = await runProcess(npmPath, ["ci", "--ignore-scripts", "--include=optional", `--registry=${REGISTRY}`, `--userconfig=${userConfig}`, `--globalconfig=${globalConfig}`, `--cache=${(0, import_node_path4.join)(root, "npm-cache")}`, "--no-audit", "--no-fund", "--loglevel=error"], { cwd: destination, env, timeoutMs: 10 * 60 * 1e3, log: options.log });
+    const installEnv = { ...env };
+    let npmUserConfigArgument = userConfig;
+    if (options.useRunnerNpmConfig) {
+      npmUserConfigArgument = await runnerManagedFile(process.env.NPM_CONFIG_USERCONFIG, "NPM_CONFIG_USERCONFIG");
+      installEnv.NPM_CONFIG_USERCONFIG = npmUserConfigArgument;
+    }
+    if (options.useRunnerNpmCa) {
+      installEnv.NODE_EXTRA_CA_CERTS = await runnerManagedFile(process.env.NODE_EXTRA_CA_CERTS, "NODE_EXTRA_CA_CERTS");
+    }
+    const install = await runProcess(npmPath, ["ci", "--ignore-scripts", "--include=optional", `--registry=${REGISTRY}`, `--userconfig=${npmUserConfigArgument}`, `--globalconfig=${globalConfig}`, `--cache=${(0, import_node_path4.join)(root, "npm-cache")}`, "--no-audit", "--no-fund", "--loglevel=error"], { cwd: destination, env: installEnv, timeoutMs: 10 * 60 * 1e3, log: options.log });
     if (install.exitCode !== 0 || install.timedOut || install.interrupted) {
       const details = safeLogLines([install.stderr, install.stdout].join("\n")).join("\n");
       throw new Error(`Integrity-locked CLI installation failed (exit ${install.exitCode}${install.timedOut ? ", timed out" : ""}${install.interrupted ? ", interrupted" : ""}).
@@ -97659,7 +97678,7 @@ async function runAction(actionRoot, overrides = {}) {
       const preparationStarted = performance.now();
       let timer = heartbeat("CLI preparation", preparationStarted);
       try {
-        runtime = await deps.setupRuntime({ actionRoot, tempRoot, repository: target.repository, provider: inputs.provider, model: inputs.model, log: inputs.verbose ? info : void 0 });
+        runtime = await deps.setupRuntime({ actionRoot, tempRoot, repository: target.repository, provider: inputs.provider, model: inputs.model, useRunnerNpmConfig: inputs.useRunnerNpmConfig, useRunnerNpmCa: inputs.useRunnerNpmCa, log: inputs.verbose ? info : void 0 });
       } finally {
         clearInterval(timer);
       }

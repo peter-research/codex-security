@@ -40,6 +40,8 @@ export interface RuntimeOptions {
   repository: string;
   provider: ScanCredentials['provider'];
   model: string;
+  useRunnerNpmConfig?: boolean;
+  useRunnerNpmCa?: boolean;
   log?: (line: string) => void;
 }
 export interface Runtime {
@@ -91,6 +93,11 @@ export function runtimeEnvironment(paths: Pick<Runtime, 'root' | 'home' | 'codex
   return env;
 }
 
+export async function runnerManagedFile(value: string | undefined, variable: 'NPM_CONFIG_USERCONFIG' | 'NODE_EXTRA_CA_CERTS'): Promise<string> {
+  if (!value || !isAbsolute(value)) throw new Error(`Runner ${variable} must be an absolute path to a regular file.`);
+  try { return await regularFile(value); }
+  catch { throw new Error(`Runner ${variable} must be an absolute path to a regular file.`); }
+}
 async function regularFile(path: string): Promise<string> {
   const target = await realpath(path);
   const info = await lstat(target);
@@ -248,7 +255,16 @@ export async function setupRuntime(options: RuntimeOptions): Promise<Runtime> {
     const globalConfig = join(root, 'npm-global.conf');
     await writeFile(userConfig, '', { mode: 0o600, flag: 'wx' });
     await writeFile(globalConfig, '', { mode: 0o600, flag: 'wx' });
-    const install = await runProcess(npmPath, ['ci', '--ignore-scripts', '--include=optional', `--registry=${REGISTRY}`, `--userconfig=${userConfig}`, `--globalconfig=${globalConfig}`, `--cache=${join(root, 'npm-cache')}`, '--no-audit', '--no-fund', '--loglevel=error'], { cwd: destination, env, timeoutMs: 10 * 60 * 1000, log: options.log });
+    const installEnv = {...env};
+    let npmUserConfigArgument = userConfig;
+    if (options.useRunnerNpmConfig) {
+      npmUserConfigArgument = await runnerManagedFile(process.env.NPM_CONFIG_USERCONFIG, 'NPM_CONFIG_USERCONFIG');
+      installEnv.NPM_CONFIG_USERCONFIG = npmUserConfigArgument;
+    }
+    if (options.useRunnerNpmCa) {
+      installEnv.NODE_EXTRA_CA_CERTS = await runnerManagedFile(process.env.NODE_EXTRA_CA_CERTS, 'NODE_EXTRA_CA_CERTS');
+    }
+    const install = await runProcess(npmPath, ['ci', '--ignore-scripts', '--include=optional', `--registry=${REGISTRY}`, `--userconfig=${npmUserConfigArgument}`, `--globalconfig=${globalConfig}`, `--cache=${join(root, 'npm-cache')}`, '--no-audit', '--no-fund', '--loglevel=error'], { cwd: destination, env: installEnv, timeoutMs: 10 * 60 * 1000, log: options.log });
     if (install.exitCode !== 0 || install.timedOut || install.interrupted) {
       // npm can write lockfile diagnostics to stdout.
       const details = safeLogLines([install.stderr, install.stdout].join('\n')).join('\n');
