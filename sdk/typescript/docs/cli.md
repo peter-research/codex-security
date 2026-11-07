@@ -1203,16 +1203,21 @@ Automatic history matching gets at most one extra call with a limit; if more
 work is needed, the scan is preserved and you can run `scans match --all`.
 
 A scan with a cost limit requires complete token usage for its recorded scan,
-worker, and custom validation sessions before the SDK returns a completed result.
+worker, and custom validation sessions before the SDK accepts either cost-stop
+stage. If the limit is reached before Deep discovery is sealed, the scan stops
+with its retained partial evidence. If discovery has already been sealed, the
+host can seal its findings and deferred evidence, but the manifest status is
+`interrupted`, SARIF marks `executionSuccessful: false`, and the CLI exits `2`
+to distinguish this result from normal completion.
 Verifying compressed `.jsonl.zst` sessions requires Python 3.14 or later, or
 `backports.zstd` installed in the selected Python environment.
 Missing or unreadable usage fails budget verification. Without a limit, usage
 reporting remains best effort.
 
-When Deep discovery has finished at a cost stop and usage is verified, the scan returns a sealed
-report and lists unvalidated candidates as follow-up work. Reaching a configured
-limit with a valid finalized report returns `0` by default, or `1` if findings
-meet a configured failure threshold.
+When Deep discovery has finished at a cost stop and usage is verified, the scan
+returns a sealed report, preserves unvalidated candidates as follow-up work,
+and signals interrupted execution as described above. A cost stop does not
+discard findings or deferred evidence, and absence of findings is inconclusive.
 
 When a worker turn fails with a known cybersecurity policy refusal or an
 exhausted usage limit, Deep Scan stops retries and replacements, cancels active

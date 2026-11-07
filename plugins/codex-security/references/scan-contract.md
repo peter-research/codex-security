@@ -36,9 +36,11 @@ Producers should use UTC ISO 8601 timestamps in the native SDK or plugin format.
 | `completed`   | The requested scan reached normal completion.                                                                   |
 | `failed`      | The scan stopped after an unrecoverable failure; retained artifacts may be partial.                             |
 | `canceled`    | The scan stopped after an explicit cancellation; retained artifacts may be partial.                             |
-| `interrupted` | The scan stopped before normal completion because execution was interrupted; retained artifacts may be partial. |
+| `interrupted` | The scan stopped before normal completion because execution was interrupted or a cost limit was reached; retained artifacts may be partial. |
 
 Only `completed` supports a completed-scan conclusion. For every stopped outcome, consumers must preserve retained findings and review state while treating absence of findings as inconclusive.
+
+A cost stop before discovery is sealed leaves the scan stopped with whatever evidence was retained. If the configured limit is exceeded after Deep discovery is sealed, the host can still seal the retained findings and deferred discovery evidence, but marks the scan `interrupted`: SARIF `executionSuccessful` is false and the CLI reports a stopped execution rather than normal completion.
 
 Optional `scan.warnings` records run-level diagnostics available when the bundle is first sealed. SARIF exports include these messages alongside deferred-task reasons in `toolExecutionNotifications`; warnings do not change `executionSuccessful`, which follows `scan.status`. Missing or empty warnings add no notifications. Existing sealed bundles remain unchanged, and export or publication warnings discovered afterward remain separate operation diagnostics.
 

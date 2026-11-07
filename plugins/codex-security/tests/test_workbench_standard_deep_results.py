@@ -2216,10 +2216,11 @@ def test_budget_exhaustion_preserves_validated_standard_results_without_candidat
             "reason": "Validation was deferred because the scan reached its cost limit.",
         }
     ]
+    assert json.loads(manifest_path.read_text())["scan"]["status"] == "interrupted"
     sarif = json.loads((scan_dir / "exports/results.sarif").read_text())
     assert sarif["runs"][0]["invocations"] == [
         {
-            "executionSuccessful": True,
+            "executionSuccessful": False,
             "toolExecutionNotifications": [{"level": "warning", "message": {"text": warning}}],
         }
     ]

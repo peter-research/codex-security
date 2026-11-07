@@ -252,6 +252,7 @@ def test_budget_exhaustion_preserves_unvalidated_discovery_as_deferred_work(
     assert manifest["scan"]["target"]["displayName"] == target.name
     assert manifest["scan"]["target"]["targetId"] == stable_target_id(target)
     assert manifest["scan"]["sealedAt"]
+    assert manifest["scan"]["status"] == "interrupted"
     assert warning in manifest["scan"]["scope"]["limitations"]
     coverage = read_review_state(state_dir, scan_dir)
     assert coverage["mode"] == "deep_repository"
@@ -262,7 +263,8 @@ def test_budget_exhaustion_preserves_unvalidated_discovery_as_deferred_work(
     assert "User input reaches a SQL statement" in coverage["deferred"][0]["reason"]
     assert coverage["surfaces"][0]["disposition"] == "needs_follow_up"
     report = (scan_dir / "report.md").read_text()
-    assert "No findings were reported." in report
+    assert "The scan did not complete." in report
+    assert "No vulnerability conclusion can be drawn." in report
 
 
 def test_budget_exhaustion_preserves_authored_validated_findings(tmp_path: Path) -> None:
@@ -398,7 +400,9 @@ def test_budget_exhaustion_preserves_existing_deferred_work_with_one_trusted_mar
             "id": "scan-cost-limit",
             "reason": "Validation was deferred because the scan reached its cost limit.",
         }
-    assert "No findings were reported." in (scan_dir / "report.md").read_text()
+    report = (scan_dir / "report.md").read_text()
+    assert "The scan did not complete." in report
+    assert "No vulnerability conclusion can be drawn." in report
 
 
 def test_budget_exhaustion_preserves_capped_discovery(tmp_path: Path) -> None:

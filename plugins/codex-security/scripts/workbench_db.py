@@ -392,6 +392,7 @@ def workbench_completion_binding(
         "scanId": scan["id"],
         "startedAt": scan["started_at"],
         "completedAt": completed_at,
+        "status": "completed",
         "producer": {"name": PRODUCER_NAME, "version": plugin_version},
         "target": target,
         "allowedTargetKinds": target_contract["allowedKinds"],
@@ -1143,7 +1144,9 @@ def complete_budget_exhausted_scan(
                 (json.dumps([*warnings, warning]), scan_id),
             )
             connection.commit()
-        return complete_scan_locked(connection, scan_id, None, cost_json)
+        return complete_scan_locked(
+            connection, scan_id, None, cost_json, completion_status="interrupted"
+        )
 
 
 def budget_exhausted_candidates(scan: sqlite3.Row, scan_dir: Path) -> list[dict[str, Any]]:
@@ -1230,6 +1233,7 @@ def complete_scan_locked(
     claim_token: str | None,
     cost_json: str | None,
     *,
+    completion_status: str = "completed",
     prepare_only: bool = False,
     thread_id: str | None = None,
     turn_id: str | None = None,
@@ -1269,6 +1273,7 @@ def complete_scan_locked(
         and manifest_is_sealed(current_manifest["scan"])
     )
     completion_binding = workbench_completion_binding(scan, completion_timestamp, current_manifest)
+    completion_binding["status"] = completion_status
     if scan["recipe_json"] is not None:
         missing_drafts = []
         for file_name in (
